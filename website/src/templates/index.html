@@ -1,0 +1,121 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml' lang='en-us' xml:lang='en-us'>
+<head>
+<style>
+.chart {
+    height:300px;
+    width:100%;
+}
+</style>
+<script src='{{ url_for('static', filename='jquery.min.js') }}'></script>
+<script src='{{ url_for('static', filename='prototype.js') }}'></script>
+<script src='{{ url_for('static', filename='canvas.min.js') }}'></script>
+<script type='text/javascript'>
+window.onload = function () {
+    var temperatures = [];
+    var humidities = [];
+    var abshumidities = [];
+    var last_get_th = 0;
+    var getting_flag_th = 0;
+
+    var chart_defaults = {
+        creditText: '',
+        zoomEnabled: true,
+        axisX: {
+            valueFormatString: 'D MMM H:mm:ss'
+        }
+    };
+
+    var temperature_chartS = {
+        title: {text: 'Temperature', fontSize: 18},
+        axisY: {suffix: '°C', minimum: 0, maximum: 30},
+        toolTip: {content : '{x}, {y}°C'},
+        data: [{type: 'line', xValueType: 'dateTime', name: 'Temperature', dataPoints: temperatures}]
+    };
+    var humidity_chartS = {
+        title: { text: 'Relative humidity', fontSize: 18},
+        axisY: {suffix: '% RH', minimum: 0, maximum: 100},
+        toolTip: {content : '{x}, {y}% RH'},
+        data: [{type: 'line', xValueType: 'dateTime', name: 'Humidity', dataPoints: humidities}]
+    };
+    var abshumidity_chartS = {
+        title: { text: 'Absolute humidity', fontSize: 18},
+        axisY: {suffix: ' g/m^3', minimum: 0, maximum: 20},
+        toolTip: {content : '{x}, {y} g/m^3'},
+        data: [{type: 'line', xValueType: 'dateTime', name: 'Humidity', dataPoints: abshumidities}]
+    };
+
+    Object.extend(temperature_chartS, chart_defaults);
+    Object.extend(humidity_chartS, chart_defaults);
+    Object.extend(abshumidity_chartS, chart_defaults);
+
+    var temperature_chart = new CanvasJS.Chart('temperature_chart', temperature_chartS);
+    var humidity_chart = new CanvasJS.Chart('humidity_chart', humidity_chartS);
+    var abshumidity_chart = new CanvasJS.Chart('abshumidity_chart', abshumidity_chartS);
+
+    var updateTHChart = function () {
+        var url = '{{ url_for('outlet', device_id=device) }}';
+        if ( getting_flag_th == 1 ) {
+            return;
+        }
+        if ( last_get_th > 0 ) {
+            url = url+last_get_th+'/';
+        }
+        getting_flag = 1;
+        new Ajax.Request(url, {
+            method: 'get',
+            onSuccess: function(transport) {
+                var d = transport.responseText.evalJSON();
+                if ( d.length > 0 ) {
+                for ( var i=0; i<d.length; i++ ) {
+                    if ( temperatures.length >= 100000 ) {
+                        temperatures.shift(); humidities.shift(); abshumidities.shift();
+                    }
+                    var index = temperatures.length;
+                    t = new Date(d[i][0]*1000);
+                    var T = d[i][1]*0.01;
+                    var RH = d[i][2]*0.01;
+                    // See https://www.hatchability.com/Vaisala.pdf
+                    var AbsRH = Math.round((RH * 6.116441 * Math.pow(10, 7.591386 * T / (T + 240.7263) ) * 2.16679 / (T+273.15))*100)/100;
+                    temperatures[index] = {
+                        x: t,
+                        y: d[i][1]*0.01
+                    };
+                    humidities[index] = {
+                        x: t,
+                        y: RH
+                    };
+                    abshumidities[index] = {
+                        x: t,
+                        y: AbsRH
+                    };
+                }
+                last_get_th = d.last()[0];
+                temperature_chart.render();
+                humidity_chart.render();
+                abshumidity_chart.render();
+                }
+                getting_flag_th = 0;
+            }
+        });
+    }
+    updateTHChart();
+    setInterval(function(){updateTHChart()}, 15000);
+}
+</script>
+</head>
+<body>
+<div>
+Devices: {% for device_id in devices %}
+{% if device_id == device %}
+{{ device_id }}
+{% else %}
+<a href='{{ url_for('index', device_id=device_id) }}'>{{ device_id }}</a>
+{% endif %}
+{% endfor %}
+</div>
+<div id='temperature_chart' class='chart'></div>
+<div id='humidity_chart' class='chart'></div>
+<div id='abshumidity_chart' class='chart'></div>
+</body>
+</html>
